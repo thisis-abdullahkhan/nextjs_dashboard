@@ -1,13 +1,22 @@
 'use server';
 
-import { z } from 'zod/v4';
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import postgres from 'postgres';
+// NOTE: '@/auth' must exist and export a server-friendly signIn implementation.
+// If you're using next-auth, make sure to adapt this to how you sign in on the server.
 import { signIn } from '@/auth';
 import { AuthError } from 'next-auth';
 
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: require });
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('Missing Postgres connection string. Set POSTGRES_URL or DATABASE_URL in your environment.');
+}
+
+const sql = postgres(connectionString, {
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
 const FormSchema = z.object({
   id: z.string(),
@@ -18,7 +27,7 @@ const FormSchema = z.object({
   status: z.enum(['pending', 'paid'], {
     invalid_type_error: 'Please select an invoice status.',
   }),
-  date: z.string,
+  date: z.string(),
 });
 
 // Use zod to update the expected types
@@ -62,7 +71,7 @@ export async function createInvoice(prevData: State, formData: FormData) {
       VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
     `;
   } catch (error) {
-    // If a database erorr occurs, return a more specific error.
+    // If a database error occurs, return a more specific error.
     return {
       message: 'Database Error: Failed to Create Invoice',
     };
@@ -118,6 +127,9 @@ export async function authenticate(
   formData: FormData
 ) {
   try {
+    // signIn here must be a server-friendly routine. If you're using next-auth's client-side signIn,
+    // you need to call it from the client. If you want server-side credential verification,
+    // implement credential checking here (query DB + bcrypt.compare).
     await signIn('credentials', formData);
   } catch (error) {
     if (error instanceof AuthError) {
